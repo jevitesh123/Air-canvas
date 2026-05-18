@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Canvas Pro | AI Hand Tracking</title>
+    
+    <!-- Fonts -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav class="navbar-custom">
+    <div class="navbar-brand-custom">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Air Canvas Pro
+    </div>
+    <div class="nav-status">
+        <span class="status-badge" id="connectionStatus"><i class="fa-solid fa-circle-check"></i> System Online</span>
+    </div>
+</nav>
+
+<div class="app-container">
+    <div style="display: grid; grid-template-columns: 320px 1fr; gap: 24px;">
+
+        <!-- LEFT PANEL - Glassmorphic Sidebar -->
+        <div class="glass-panel tools-sidebar">
+            
+            <div class="section-title">
+                <i class="fa-solid fa-palette"></i> Active Tool
+            </div>
+
+            <!-- Sleek Display Indicator -->
+            <div class="active-color-display">
+                <div id="colorDisplay" class="color-indicator"></div>
+                <h4 id="colorName" style="margin:0; font-weight: 600; font-size: 1.1rem; color: #fff;">Blue</h4>
+            </div>
+
+            <div class="section-title" style="margin-top: 30px;">
+                <i class="fa-solid fa-swatchbook"></i> Color Palette
+            </div>
+            
+            <!-- Circular Color Swatches -->
+            <div class="palette-container" id="swatchContainer">
+                <div class="color-swatch" data-color="0" title="Blue"></div>
+                <div class="color-swatch" data-color="1" title="Green"></div>
+                <div class="color-swatch" data-color="2" title="Red"></div>
+                <div class="color-swatch" data-color="3" title="Yellow"></div>
+                <!-- Hidden select for backwards compatibility with script.js if needed -->
+                <select id="colorPicker" style="display: none;">
+                    <option value="0">Blue</option>
+                    <option value="1">Green</option>
+                    <option value="2">Red</option>
+                    <option value="3">Yellow</option>
+                </select>
+            </div>
+
+            <div class="section-title" style="margin-top: 30px;">
+                <i class="fa-solid fa-paintbrush"></i> Brush Size: <span id="brushValue" style="color: var(--secondary);">4</span>
+            </div>
+            
+            <!-- Sleek Slider -->
+            <div class="brush-size-container">
+                <input type="range" class="range-slider" min="1" max="20" value="4" id="brushSize">
+            </div>
+
+            <!-- Actions -->
+            <div class="section-title" style="margin-top: 30px;">
+                <i class="fa-solid fa-layer-group"></i> Actions
+            </div>
+
+            <div class="btn-group-row">
+                <button class="btn-premium" onclick="undo()" title="Undo"><i class="fa-solid fa-rotate-left"></i> Undo</button>
+                <button class="btn-premium" onclick="redo()" title="Redo"><i class="fa-solid fa-rotate-right"></i> Redo</button>
+            </div>
+            
+            <button class="btn-premium btn-primary-glow" onclick="saveDrawing()"><i class="fa-solid fa-floppy-disk"></i> Save Masterpiece</button>
+            
+            <div class="btn-group-row">
+                <button class="btn-premium btn-danger-glow" onclick="clearCanvas()"><i class="fa-solid fa-trash-can"></i> Clear</button>
+                <button class="btn-premium" onclick="takeScreenshot()"><i class="fa-solid fa-camera"></i> Snapshot</button>
+            </div>
+
+            <!-- Stats -->
+            <div class="section-title" style="margin-top: 40px;">
+                <i class="fa-solid fa-chart-simple"></i> Session Stats
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Strokes</div>
+                    <div class="stat-value highlight" id="strokeCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Time</div>
+                    <div class="stat-value" id="drawingTime">0s</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Distance</div>
+                    <div class="stat-value" id="totalDistance">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Speed</div>
+                    <div class="stat-value" id="strokesPerMin">0</div>
+                </div>
+            </div>
+
+            <div class="stat-card" style="margin-bottom: 20px;">
+                <div class="stat-label">Colors Used</div>
+                <div id="colorsUsed" style="font-size: 0.85rem; padding-top: 5px;">None</div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT PANEL - Video Area -->
+        <div>
+            <div class="canvas-wrapper">
+                <img id="videoFeed" src="{{ url_for('video') }}" alt="Live Canvas Feed">
+            </div>
+            
+            <!-- Sleek Hints -->
+            <div class="hints-container">
+                <div class="hint-card primary">
+                    <div class="hint-icon"><i class="fa-solid fa-hand-pointer"></i></div>
+                    <div class="hint-text">
+                        <h6>Drawing Mode</h6>
+                        <p>Raise only your index finger.</p>
+                    </div>
+                </div>
+                <div class="hint-card secondary">
+                    <div class="hint-icon"><i class="fa-solid fa-hand-peace"></i></div>
+                    <div class="hint-text">
+                        <h6>Selection Mode</h6>
+                        <p>Raise index & middle fingers.</p>
+                    </div>
+                </div>
+                <div class="hint-card">
+                    <div class="hint-icon"><i class="fa-solid fa-hand"></i></div>
+                    <div class="hint-text">
+                        <h6>Eraser Mode</h6>
+                        <p>Open palm to erase lines.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+<script>
+    // Custom logic to wire up swatches without breaking script.js
+    document.addEventListener("DOMContentLoaded", () => {
+        const swatches = document.querySelectorAll('.color-swatch');
+        const colorPicker = document.getElementById('colorPicker');
+        
+        function setActiveSwatch(val) {
+            swatches.forEach(s => s.classList.remove('active'));
+            const activeSwatch = document.querySelector(`.color-swatch[data-color="${val}"]`);
+            if (activeSwatch) activeSwatch.classList.add('active');
+        }
+
+        // Initialize active swatch
+        setActiveSwatch(colorPicker.value);
+
+        // Click on swatches
+        swatches.forEach(swatch => {
+            swatch.addEventListener('click', () => {
+                const val = swatch.getAttribute('data-color');
+                colorPicker.value = val;
+                colorPicker.dispatchEvent(new Event('change'));
+                setActiveSwatch(val);
+            });
+        });
+
+        // Sync if script.js changes color programmatically
+        colorPicker.addEventListener('change', () => {
+            setActiveSwatch(colorPicker.value);
+        });
+    });
+</script>
+</body>
+</html>
