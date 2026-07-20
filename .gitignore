@@ -1,3 +1,14 @@
+.venv/
 venv/
+env/
+
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Large ML models
+Air_Canvas/models/hand_landmarker.task
+
+# Temporary nested folder
+Air-canvas-main/
