@@ -276,6 +276,42 @@ body {
     display: block;
 }
 
+.camera-prompt {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px;
+    text-align: center;
+    background: rgba(10, 10, 20, 0.92);
+    color: #fff;
+}
+
+.camera-prompt.visible {
+    display: flex;
+}
+
+.camera-prompt i.fa-video {
+    font-size: 2.5rem;
+    color: var(--secondary, #6366f1);
+}
+
+.camera-prompt h3 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.camera-prompt p {
+    margin: 0;
+    max-width: 420px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.5;
+}
+
 /* Status Indicators */
 .status-badge {
     position: absolute;

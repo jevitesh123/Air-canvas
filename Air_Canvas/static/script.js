@@ -12,7 +12,163 @@ window.addEventListener('DOMContentLoaded', function() {
     setupKeyboardShortcuts();
     loadGestureInstructions();
     checkApplicationHealth();
+    initVideoFeed();
 });
+
+// ============ Video Feed / Camera ============
+let browserCameraStream = null;
+let browserCameraActive = false;
+let browserFrameBusy = false;
+let browserCaptureVideo = null;
+let browserCaptureCanvas = null;
+
+async function initVideoFeed() {
+    const videoFeed = document.getElementById('videoFeed');
+    const cameraPrompt = document.getElementById('cameraPrompt');
+    const startCameraBtn = document.getElementById('startCameraBtn');
+
+    if (!videoFeed) return;
+
+    if (startCameraBtn) {
+        startCameraBtn.addEventListener('click', () => startBrowserCamera());
+    }
+
+    try {
+        const res = await fetch('/camera-status');
+        const data = await res.json();
+
+        if (data.browser_camera_required) {
+            if (cameraPrompt) cameraPrompt.classList.add('visible');
+            updateConnectionStatus('Browser camera required', 'warning');
+            return;
+        }
+
+        videoFeed.src = '/video';
+        videoFeed.onerror = () => {
+            if (cameraPrompt) cameraPrompt.classList.add('visible');
+            updateConnectionStatus('Camera unavailable — use browser webcam', 'warning');
+        };
+    } catch (error) {
+        console.warn('Camera status check failed, trying browser camera:', error);
+        if (cameraPrompt) cameraPrompt.classList.add('visible');
+    }
+}
+
+async function startBrowserCamera() {
+    const videoFeed = document.getElementById('videoFeed');
+    const cameraPrompt = document.getElementById('cameraPrompt');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showNotification('❌ Webcam not supported in this browser', 'error');
+        return;
+    }
+
+    try {
+        browserCameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            },
+            audio: false
+        });
+
+        browserCaptureVideo = document.createElement('video');
+        browserCaptureVideo.srcObject = browserCameraStream;
+        browserCaptureVideo.playsInline = true;
+        browserCaptureVideo.muted = true;
+        await browserCaptureVideo.play();
+
+        browserCaptureCanvas = document.createElement('canvas');
+        browserCaptureCanvas.width = 640;
+        browserCaptureCanvas.height = 480;
+
+        browserCameraActive = true;
+        if (cameraPrompt) cameraPrompt.classList.remove('visible');
+        if (videoFeed) videoFeed.removeAttribute('src');
+
+        updateConnectionStatus('Browser camera active', 'success');
+        captureBrowserFrameLoop();
+    } catch (error) {
+        console.error('Browser camera error:', error);
+        showNotification('❌ Could not access webcam — check browser permissions', 'error');
+        if (cameraPrompt) cameraPrompt.classList.add('visible');
+    }
+}
+
+function captureBrowserFrameLoop() {
+    if (!browserCameraActive) return;
+
+    window.setTimeout(async () => {
+        if (!browserCameraActive || browserFrameBusy) {
+            captureBrowserFrameLoop();
+            return;
+        }
+
+        browserFrameBusy = true;
+        try {
+            await sendBrowserFrame();
+        } catch (error) {
+            console.error('Frame processing error:', error);
+        } finally {
+            browserFrameBusy = false;
+            captureBrowserFrameLoop();
+        }
+    }, 80);
+}
+
+function sendBrowserFrame() {
+    return new Promise((resolve, reject) => {
+        const videoFeed = document.getElementById('videoFeed');
+        if (!browserCaptureVideo || !browserCaptureCanvas || !videoFeed) {
+            resolve();
+            return;
+        }
+
+        const ctx = browserCaptureCanvas.getContext('2d');
+        ctx.drawImage(browserCaptureVideo, 0, 0, browserCaptureCanvas.width, browserCaptureCanvas.height);
+
+        browserCaptureCanvas.toBlob(async (blob) => {
+            if (!blob) {
+                resolve();
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('frame', blob, 'frame.jpg');
+
+            try {
+                const res = await fetch('/process-frame', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const processedBlob = await res.blob();
+                    const objectUrl = URL.createObjectURL(processedBlob);
+                    videoFeed.onload = () => URL.revokeObjectURL(objectUrl);
+                    videoFeed.src = objectUrl;
+                }
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        }, 'image/jpeg', 0.82);
+    });
+}
+
+function updateConnectionStatus(message, type = 'info') {
+    const statusEl = document.getElementById('connectionStatus');
+    if (!statusEl) return;
+
+    const icon = type === 'success'
+        ? 'fa-circle-check'
+        : type === 'warning'
+            ? 'fa-triangle-exclamation'
+            : 'fa-circle-info';
+
+    statusEl.innerHTML = `<i class="fa-solid ${icon}"></i> ${message}`;
+}
 
 // ============ Configuration ============
 const colorMap = {

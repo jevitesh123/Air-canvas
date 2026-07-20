@@ -119,7 +119,15 @@
         <!-- RIGHT PANEL - Video Area -->
         <div>
             <div class="canvas-wrapper">
-                <img id="videoFeed" src="{{ url_for('video') }}" alt="Live Canvas Feed">
+                <img id="videoFeed" alt="Live Canvas Feed">
+                <div id="cameraPrompt" class="camera-prompt">
+                    <i class="fa-solid fa-video"></i>
+                    <h3>Enable Your Webcam</h3>
+                    <p>Cloud servers have no camera. Allow browser access to use your device webcam for hand tracking.</p>
+                    <button type="button" class="btn-premium btn-primary-glow" id="startCameraBtn">
+                        <i class="fa-solid fa-camera"></i> Start Camera
+                    </button>
+                </div>
             </div>
             
             <!-- Sleek Hints -->

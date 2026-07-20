@@ -119,6 +119,26 @@ def release_camera() -> None:
         logger.error(f"Error releasing camera: {e}")
 
 
+def _server_camera_available() -> bool:
+    """Check whether a local/server webcam can be opened."""
+    if CV2_ERROR or cv2 is None:
+        return False
+
+    with camera_lock:
+        if camera is not None and camera.isOpened():
+            return True
+
+    test_camera = None
+    try:
+        test_camera = cv2.VideoCapture(0)
+        return test_camera.isOpened()
+    except Exception:
+        return False
+    finally:
+        if test_camera is not None:
+            test_camera.release()
+
+
 # Release hardware on interpreter exit; do not tie this to app.run() return order.
 atexit.register(release_camera)
 
@@ -490,6 +510,67 @@ def reset_session():
             "status": "error"
         }), 500
 
+@app.route('/camera-status')
+def camera_status():
+    """Report whether the server has a usable webcam."""
+    force_browser = str(os.getenv('USE_BROWSER_CAMERA', '0')).lower() in ('1', 'true', 'yes')
+    available = False
+    if not force_browser and not CV2_ERROR and cv2 is not None:
+        available = _server_camera_available()
+
+    return jsonify({
+        'camera_available': available,
+        'browser_camera_required': force_browser or not available,
+        'mode': 'browser' if (force_browser or not available) else 'server',
+    }), 200
+
+
+@app.route('/process-frame', methods=['POST'])
+def process_frame_route():
+    """Process a browser webcam frame and return the annotated JPEG."""
+    if AIR_CANVAS_ERROR:
+        return jsonify({'error': 'Application dependencies missing', 'details': AIR_CANVAS_ERROR}), 500
+    if CV2_ERROR or cv2 is None:
+        return jsonify({'error': 'OpenCV (cv2) not available', 'details': CV2_ERROR}), 503
+
+    try:
+        raw = None
+        if request.files.get('frame'):
+            raw = request.files['frame'].read()
+        elif request.is_json:
+            import base64
+            payload = request.get_json(silent=True) or {}
+            image_data = payload.get('image', '')
+            if ',' in image_data:
+                image_data = image_data.split(',', 1)[1]
+            raw = base64.b64decode(image_data)
+
+        if not raw:
+            return jsonify({'error': 'No frame data provided'}), 400
+
+        frame_array = np.frombuffer(raw, dtype=np.uint8)
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        if frame is None:
+            return jsonify({'error': 'Invalid image data'}), 400
+
+        frame = cv2.flip(frame, 1)
+        if air_canvas is not None:
+            frame = air_canvas.process_frame(frame)
+
+        APP_STATUS['frames_processed'] = APP_STATUS.get('frames_processed', 0) + 1
+        APP_STATUS['status'] = 'Running'
+
+        ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok:
+            return jsonify({'error': 'Failed to encode frame'}), 500
+
+        return Response(buffer.tobytes(), mimetype='image/jpeg')
+    except Exception as e:
+        logger.error(f"Process frame error: {e}")
+        APP_STATUS['last_error'] = str(e)
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/health')
 def health():
     """Health check endpoint."""
@@ -503,6 +584,8 @@ def health():
     return jsonify({
         "status": "healthy",
         "app_status": APP_STATUS['status'],
+        "camera_available": _server_camera_available(),
+        "browser_camera_required": not _server_camera_available(),
         "timestamp": datetime.now().isoformat()
     }), 200
 

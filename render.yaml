@@ -13,3 +13,5 @@ services:
         value: "3.11.9"
       - key: FORCE_MEDIAPIPE
         value: "0"
+      - key: USE_BROWSER_CAMERA
+        value: "1"
