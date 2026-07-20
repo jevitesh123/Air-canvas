@@ -528,12 +528,14 @@ if __name__ == '__main__':
     if not init_camera():
         logger.warning("Camera not ready at startup — will retry when /video is opened.")
 
-    logger.info("Starting Flask — open http://127.0.0.1:5000/ (Ctrl+C to stop)")
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('FLASK_HOST', '0.0.0.0' if os.getenv('PORT') else '127.0.0.1')
+    logger.info("Starting Flask — open http://%s:%s/ (Ctrl+C to stop)", host, port)
     # use_reloader=False: avoids double process on Windows and keeps a single VideoCapture.
     app.run(
         debug=False,
-        host='127.0.0.1',
-        port=5000,
+        host=host,
+        port=port,
         threaded=True,
         use_reloader=False,
     )

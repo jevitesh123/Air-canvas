@@ -1,4 +1,5 @@
 flask
+gunicorn
 opencv-python
 numpy
 mediapipe==0.10.32
