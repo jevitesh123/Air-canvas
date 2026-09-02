@@ -53,7 +53,7 @@ def init_mediapipe(force: bool = False) -> bool:
     """
     global mp, mp_hands, mp_drawing, HAND_DETECTOR, USE_MEDIAPIPE, MEDIA_PIPE_ERROR
 
-    if USE_MEDIAPIPE and HAND_DETECTOR is not None and not force:
+    if USE_MEDIAPIPE and (HAND_DETECTOR is not None or mp_hands is not None) and not force:
         return True
 
     # Ensure model file exists. If not, try to download it.
@@ -71,42 +71,54 @@ def init_mediapipe(force: bool = False) -> bool:
             )
             logger.info('Downloaded hand_landmarker.task')
         except Exception as e:
-            MEDIA_PIPE_ERROR = f"Failed to download MediaPipe model: {e}"
-            logger.warning(MEDIA_PIPE_ERROR)
-            USE_MEDIAPIPE = False
-            HAND_DETECTOR = None
-            return False
+            logger.warning(f"Failed to download MediaPipe model task file: {e}")
 
     try:
-        # Use the new MediaPipe Tasks API (v0.10+) for better hand landmark detection.
-        from mediapipe.tasks.python.core.base_options import BaseOptions
-        from mediapipe.tasks.python.vision.core import image as mp_image
-        from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
-        from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions
+        # 1. Try modern MediaPipe Tasks API (v0.10+)
+        if os.path.exists(model_path):
+            from mediapipe.tasks.python.core.base_options import BaseOptions
+            from mediapipe.tasks.python.vision.core import image as mp_img_module
+            from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
+            from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions
 
-        base_options = BaseOptions(model_asset_path=model_path)
-        options = HandLandmarkerOptions(
-            base_options=base_options,
-            running_mode=VisionTaskRunningMode.IMAGE,
-            num_hands=1,
-            min_hand_detection_confidence=0.65,
-            min_hand_presence_confidence=0.5,
-            min_tracking_confidence=0.55,
+            base_options = BaseOptions(model_asset_path=model_path)
+            options = HandLandmarkerOptions(
+                base_options=base_options,
+                running_mode=VisionTaskRunningMode.IMAGE,
+                num_hands=1,
+                min_hand_detection_confidence=0.65,
+                min_hand_presence_confidence=0.5,
+                min_tracking_confidence=0.55,
+            )
+
+            HAND_DETECTOR = HandLandmarker.create_from_options(options)
+            USE_MEDIAPIPE = True
+            MEDIA_PIPE_ERROR = None
+            globals()['mp_image'] = mp_img_module
+            logger.info('MediaPipe Tasks HandLandmarker initialized successfully')
+            return True
+    except Exception as e:
+        logger.warning(f'MediaPipe Tasks initialization failed: {e}')
+
+    try:
+        # 2. Try legacy MediaPipe Solutions API fallback
+        import mediapipe as mp_lib
+        mp_solutions_hands = mp_lib.solutions.hands
+        mp_hands = mp_solutions_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.5
         )
-
-        HAND_DETECTOR = HandLandmarker.create_from_options(options)
-        mp = None
-        mp_hands = None
-        mp_drawing = None
         USE_MEDIAPIPE = True
         MEDIA_PIPE_ERROR = None
-        logger.info('MediaPipe Tasks HandLandmarker initialized successfully')
-        # Keep references for use in detect_hand
-        globals()['mp_image'] = mp_image
+        HAND_DETECTOR = None
+        logger.info('MediaPipe Solutions Hands initialized successfully as fallback')
         return True
     except Exception as e:
         USE_MEDIAPIPE = False
         HAND_DETECTOR = None
+        mp_hands = None
         MEDIA_PIPE_ERROR = str(e)
         logger.warning(f'MediaPipe initialization failed: {e}')
         return False
@@ -142,44 +154,60 @@ def detect_hand(frame_rgb: np.ndarray) -> Optional[Dict]:  # type: ignore[valid-
     # --- MediaPipe Tasks-based detection (preferred) ---
     if USE_MEDIAPIPE and HAND_DETECTOR is not None and mp_image is not None:
         try:
-            # MediaPipe Tasks expects an Image wrapper
             image = mp_image.Image(mp_image.ImageFormat.SRGB, frame_rgb)
             results = HAND_DETECTOR.detect(image)
 
-            if not results or not results.hand_landmarks:
-                return None
-
-            # Use the first detected hand
-            hand_landmarks = results.hand_landmarks[0]
-            h, w, _ = frame_rgb.shape
-
-            points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
-            if not points:
-                return None
-
-            cx = int(np.mean([p[0] for p in points]))
-            cy = int(np.mean([p[1] for p in points]))
-
-            index_tip = points[8] if len(points) > 8 else (cx, cy)
-
-            bbox = (
-                min(p[0] for p in points),
-                min(p[1] for p in points),
-                max(p[0] for p in points),
-                max(p[1] for p in points)
-            )
-
-            return {
-                'center': (cx, cy),
-                'index_tip': index_tip,
-                'landmarks': points,
-                'bbox': bbox,
-                'hand_landmarks': hand_landmarks
-            }
+            if results and results.hand_landmarks:
+                hand_landmarks = results.hand_landmarks[0]
+                h, w, _ = frame_rgb.shape
+                points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
+                if points:
+                    cx = int(np.mean([p[0] for p in points]))
+                    cy = int(np.mean([p[1] for p in points]))
+                    index_tip = points[8] if len(points) > 8 else (cx, cy)
+                    bbox = (
+                        min(p[0] for p in points),
+                        min(p[1] for p in points),
+                        max(p[0] for p in points),
+                        max(p[1] for p in points)
+                    )
+                    return {
+                        'center': (cx, cy),
+                        'index_tip': index_tip,
+                        'landmarks': points,
+                        'bbox': bbox,
+                        'hand_landmarks': hand_landmarks
+                    }
         except Exception as e:
-            # Fall back to skin tone detection if MediaPipe fails at runtime
-            logger.warning(f"MediaPipe detection error: {e}")
-            return None
+            logger.warning(f"MediaPipe Tasks detection error: {e}")
+
+    # --- MediaPipe Solutions API detection fallback ---
+    if USE_MEDIAPIPE and mp_hands is not None:
+        try:
+            results = mp_hands.process(frame_rgb)
+            if results and results.multi_hand_landmarks:
+                hand_landmarks = results.multi_hand_landmarks[0]
+                h, w, _ = frame_rgb.shape
+                points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks.landmark]
+                if points:
+                    cx = int(np.mean([p[0] for p in points]))
+                    cy = int(np.mean([p[1] for p in points]))
+                    index_tip = points[8] if len(points) > 8 else (cx, cy)
+                    bbox = (
+                        min(p[0] for p in points),
+                        min(p[1] for p in points),
+                        max(p[0] for p in points),
+                        max(p[1] for p in points)
+                    )
+                    return {
+                        'center': (cx, cy),
+                        'index_tip': index_tip,
+                        'landmarks': points,
+                        'bbox': bbox,
+                        'hand_landmarks': hand_landmarks.landmark
+                    }
+        except Exception as e:
+            logger.warning(f"MediaPipe Solutions detection error: {e}")
 
     # --- Fallback: skin-tone segmentation (less accurate) ---
     hsv = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2HSV)
@@ -225,8 +253,26 @@ def detect_hand(frame_rgb: np.ndarray) -> Optional[Dict]:  # type: ignore[valid-
     if not (0.3 <= solidity <= 1.0):
         return None
 
+    # Find topmost contour point to estimate index tip
+    topmost = tuple(largest[largest[:, :, 1].argmin()][0])
+    index_tip = (int(topmost[0]), int(topmost[1]))
+    bottommost = tuple(largest[largest[:, :, 1].argmax()][0])
+    wrist = (int(bottommost[0]), int(bottommost[1]))
+
+    # Construct synthetic 21-landmark set so classify_gesture works in skin-tone fallback mode
+    synthetic_landmarks = [wrist] * 21
+    mid_y = int((wrist[1] + index_tip[1]) / 2)
+    synthetic_landmarks[6] = (index_tip[0], mid_y)
+    synthetic_landmarks[8] = index_tip  # Index fingertip
+
+    x, y, w_box, h_box = cv2.boundingRect(largest)
+    bbox = (x, y, x + w_box, y + h_box)
+
     return {
         'center': (cx, cy),
+        'index_tip': index_tip,
+        'landmarks': synthetic_landmarks,
+        'bbox': bbox,
         'contour': largest,
         'hull': hull,
         'area': area,

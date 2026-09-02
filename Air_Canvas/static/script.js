@@ -79,15 +79,28 @@ async function startBrowserCamera() {
         browserCaptureVideo.muted = true;
         await browserCaptureVideo.play();
 
+        // Wait until video has valid frame data to prevent drawing blank black frames
+        if (browserCaptureVideo.readyState < 2 || browserCaptureVideo.videoWidth === 0) {
+            await new Promise((resolve) => {
+                const checkReady = () => {
+                    if (browserCaptureVideo && browserCaptureVideo.videoWidth > 0 && browserCaptureVideo.readyState >= 2) {
+                        resolve();
+                    } else {
+                        requestAnimationFrame(checkReady);
+                    }
+                };
+                checkReady();
+            });
+        }
+
         browserCaptureCanvas = document.createElement('canvas');
-        browserCaptureCanvas.width = 640;
-        browserCaptureCanvas.height = 480;
+        browserCaptureCanvas.width = browserCaptureVideo.videoWidth || 640;
+        browserCaptureCanvas.height = browserCaptureVideo.videoHeight || 480;
 
         browserCameraActive = true;
         if (cameraPrompt) cameraPrompt.classList.remove('visible');
-        if (videoFeed) videoFeed.removeAttribute('src');
 
-        updateConnectionStatus('Browser camera active', 'success');
+        updateConnectionStatus('Browser camera active — processing stream...', 'success');
         captureBrowserFrameLoop();
     } catch (error) {
         console.error('Browser camera error:', error);
@@ -125,6 +138,16 @@ function sendBrowserFrame() {
             return;
         }
 
+        if (browserCaptureVideo.readyState < 2 || browserCaptureVideo.videoWidth === 0) {
+            resolve();
+            return;
+        }
+
+        if (browserCaptureCanvas.width !== browserCaptureVideo.videoWidth && browserCaptureVideo.videoWidth > 0) {
+            browserCaptureCanvas.width = browserCaptureVideo.videoWidth;
+            browserCaptureCanvas.height = browserCaptureVideo.videoHeight;
+        }
+
         const ctx = browserCaptureCanvas.getContext('2d');
         ctx.drawImage(browserCaptureVideo, 0, 0, browserCaptureCanvas.width, browserCaptureCanvas.height);
 
@@ -148,9 +171,14 @@ function sendBrowserFrame() {
                     const objectUrl = URL.createObjectURL(processedBlob);
                     videoFeed.onload = () => URL.revokeObjectURL(objectUrl);
                     videoFeed.src = objectUrl;
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    const errMsg = errData.error || errData.details || `Server Error (${res.status})`;
+                    updateConnectionStatus(`Backend error: ${errMsg}`, 'warning');
                 }
                 resolve();
             } catch (error) {
+                updateConnectionStatus(`Network error: ${error.message}`, 'warning');
                 reject(error);
             }
         }, 'image/jpeg', 0.82);

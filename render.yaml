@@ -12,6 +12,6 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: FORCE_MEDIAPIPE
-        value: "0"
+        value: "1"
       - key: USE_BROWSER_CAMERA
         value: "1"
