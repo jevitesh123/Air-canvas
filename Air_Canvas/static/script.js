@@ -58,20 +58,51 @@ async function startBrowserCamera() {
     const videoFeed = document.getElementById('videoFeed');
     const cameraPrompt = document.getElementById('cameraPrompt');
 
+    if (window.isSecureContext === false && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        const errorMsg = 'Insecure Context (HTTP): Browser webcam access requires HTTPS or localhost';
+        console.error('Browser camera error:', errorMsg);
+        showNotification(`❌ ${errorMsg}`, 'error');
+        updateConnectionStatus(errorMsg, 'warning');
+        if (cameraPrompt) {
+            const promptText = cameraPrompt.querySelector('p');
+            if (promptText) promptText.textContent = `❌ ${errorMsg}`;
+            cameraPrompt.classList.add('visible');
+        }
+        return;
+    }
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showNotification('❌ Webcam not supported in this browser', 'error');
+        const errorMsg = 'Webcam API (navigator.mediaDevices.getUserMedia) unavailable in this browser environment';
+        console.error('Browser camera error:', errorMsg);
+        showNotification(`❌ ${errorMsg}`, 'error');
+        updateConnectionStatus(errorMsg, 'warning');
+        if (cameraPrompt) {
+            const promptText = cameraPrompt.querySelector('p');
+            if (promptText) promptText.textContent = `❌ ${errorMsg}`;
+            cameraPrompt.classList.add('visible');
+        }
         return;
     }
 
     try {
-        browserCameraStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: 'user'
-            },
-            audio: false
-        });
+        // Attempt 1: Ideal 640x480 resolution with facingMode user constraint
+        try {
+            browserCameraStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                },
+                audio: false
+            });
+        } catch (constraintError) {
+            console.warn('Primary camera constraints failed, trying simple { video: true } fallback:', constraintError);
+            // Attempt 2: Desktop Chrome / Virtual camera fallback constraint
+            browserCameraStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+            });
+        }
 
         browserCaptureVideo = document.createElement('video');
         browserCaptureVideo.srcObject = browserCameraStream;
@@ -103,9 +134,21 @@ async function startBrowserCamera() {
         updateConnectionStatus('Browser camera active — processing stream...', 'success');
         captureBrowserFrameLoop();
     } catch (error) {
-        console.error('Browser camera error:', error);
-        showNotification('❌ Could not access webcam — check browser permissions', 'error');
-        if (cameraPrompt) cameraPrompt.classList.add('visible');
+        console.error('Browser camera error detail:', error);
+        const errName = error.name || 'CameraError';
+        const errMsg = error.message || String(error);
+        const fullErrStr = `${errName}: ${errMsg}`;
+
+        showNotification(`❌ Could not access webcam [${fullErrStr}]`, 'error');
+        updateConnectionStatus(`Webcam error [${fullErrStr}]`, 'warning');
+
+        if (cameraPrompt) {
+            const promptText = cameraPrompt.querySelector('p');
+            if (promptText) {
+                promptText.textContent = `❌ Camera Error (${fullErrStr}). Please check browser webcam permissions / HTTPS connection.`;
+            }
+            cameraPrompt.classList.add('visible');
+        }
     }
 }
 
