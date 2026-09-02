@@ -153,16 +153,25 @@ def detect_hand(frame_rgb: np.ndarray) -> Optional[Dict]:  # type: ignore[valid-
     # Ensure required libraries loaded
     _ensure_backend_available()
 
+    orig_h, orig_w, _ = frame_rgb.shape
+
+    # Downsample frame for fast lightweight CPU inference (320x240) to prevent Gunicorn worker timeouts
+    target_w, target_h = 320, 240
+    if orig_w > target_w or orig_h > target_h:
+        proc_frame = cv2.resize(frame_rgb, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+    else:
+        proc_frame = frame_rgb
+
     # --- MediaPipe Tasks-based detection (preferred) ---
     if USE_MEDIAPIPE and HAND_DETECTOR is not None and mp_image is not None:
         try:
-            image = mp_image.Image(mp_image.ImageFormat.SRGB, frame_rgb)
+            image = mp_image.Image(mp_image.ImageFormat.SRGB, proc_frame)
             results = HAND_DETECTOR.detect(image)
 
             if results and results.hand_landmarks:
                 hand_landmarks = results.hand_landmarks[0]
-                h, w, _ = frame_rgb.shape
-                points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
+                # Scale normalized landmarks back to original canvas dimensions
+                points = [(int(lm.x * orig_w), int(lm.y * orig_h)) for lm in hand_landmarks]
                 if points:
                     cx = int(np.mean([p[0] for p in points]))
                     cy = int(np.mean([p[1] for p in points]))
@@ -186,11 +195,11 @@ def detect_hand(frame_rgb: np.ndarray) -> Optional[Dict]:  # type: ignore[valid-
     # --- MediaPipe Solutions API detection fallback ---
     if USE_MEDIAPIPE and mp_hands is not None:
         try:
-            results = mp_hands.process(frame_rgb)
+            results = mp_hands.process(proc_frame)
             if results and results.multi_hand_landmarks:
                 hand_landmarks = results.multi_hand_landmarks[0]
-                h, w, _ = frame_rgb.shape
-                points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks.landmark]
+                # Scale normalized landmarks back to original canvas dimensions
+                points = [(int(lm.x * orig_w), int(lm.y * orig_h)) for lm in hand_landmarks.landmark]
                 if points:
                     cx = int(np.mean([p[0] for p in points]))
                     cy = int(np.mean([p[1] for p in points]))
