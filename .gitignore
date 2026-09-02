@@ -9,7 +9,7 @@ __pycache__/
 *.pyd
 
 # Large ML models
-Air_Canvas/models/hand_landmarker.task
+# (hand_landmarker.task is included in repo for cloud deployment)
 
 # Temporary nested folder
 Air-canvas-main/

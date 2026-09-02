@@ -65,10 +65,12 @@ def init_mediapipe(force: bool = False) -> bool:
         try:
             import urllib.request
             logger.info('Downloading MediaPipe hand_landmarker task model...')
-            urllib.request.urlretrieve(
+            req = urllib.request.Request(
                 'https://storage.googleapis.com/mediapipe-assets/hand_landmarker.task',
-                model_path
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             )
+            with urllib.request.urlopen(req) as resp, open(model_path, 'wb') as out_f:
+                out_f.write(resp.read())
             logger.info('Downloaded hand_landmarker.task')
         except Exception as e:
             logger.warning(f"Failed to download MediaPipe model task file: {e}")
@@ -86,9 +88,9 @@ def init_mediapipe(force: bool = False) -> bool:
                 base_options=base_options,
                 running_mode=VisionTaskRunningMode.IMAGE,
                 num_hands=1,
-                min_hand_detection_confidence=0.65,
-                min_hand_presence_confidence=0.5,
-                min_tracking_confidence=0.55,
+                min_hand_detection_confidence=0.45,
+                min_hand_presence_confidence=0.40,
+                min_tracking_confidence=0.40,
             )
 
             HAND_DETECTOR = HandLandmarker.create_from_options(options)
@@ -101,14 +103,14 @@ def init_mediapipe(force: bool = False) -> bool:
         logger.warning(f'MediaPipe Tasks initialization failed: {e}')
 
     try:
-        # 2. Try legacy MediaPipe Solutions API fallback
+        # 2. Try legacy MediaPipe Solutions API fallback (static_image_mode=True for stateless HTTP requests)
         import mediapipe as mp_lib
         mp_solutions_hands = mp_lib.solutions.hands
         mp_hands = mp_solutions_hands.Hands(
-            static_image_mode=False,
+            static_image_mode=True,
             max_num_hands=1,
-            min_detection_confidence=0.6,
-            min_tracking_confidence=0.5
+            min_detection_confidence=0.45,
+            min_tracking_confidence=0.40
         )
         USE_MEDIAPIPE = True
         MEDIA_PIPE_ERROR = None
